@@ -54,6 +54,35 @@ struct int3400_thermal_priv {
 	int current_uuid_index;
 };
 
+static int int3400_thermal_run_osc(acpi_handle handle,
+				enum int3400_thermal_uuid uuid, bool enable)
+{
+	u32 ret, buf[2];
+	acpi_status status;
+	int result = 0;
+	struct acpi_osc_context context = {
+		.uuid_str = int3400_thermal_uuids[uuid],
+		.rev = 1,
+		.cap.length = 8,
+	};
+
+	buf[OSC_QUERY_DWORD] = 0;
+	buf[OSC_SUPPORT_DWORD] = enable;
+
+	context.cap.pointer = buf;
+
+	status = acpi_run_osc(handle, &context);
+	if (ACPI_SUCCESS(status)) {
+		ret = *((u32 *)(context.ret.pointer + 4));
+		if (ret != enable)
+			result = -EPERM;
+	} else
+		result = -EPERM;
+
+	kfree(context.ret.pointer);
+	return result;
+}
+
 static ssize_t available_uuids_show(struct device *dev,
 				    struct device_attribute *attr,
 				    char *buf)
@@ -101,6 +130,10 @@ static ssize_t current_uuid_store(struct device *dev,
 		    !(strncmp(buf, int3400_thermal_uuids[i],
 			      sizeof(int3400_thermal_uuids[i]) - 1))) {
 			priv->current_uuid_index = i;
+
+			// HACK(andrew): on recommendation of mjg59
+			int3400_thermal_run_osc(priv->adev->handle, i, true);
+
 			return count;
 		}
 	}
@@ -165,35 +198,6 @@ static int int3400_thermal_get_uuids(struct int3400_thermal_priv *priv)
 
 end:
 	kfree(buf.pointer);
-	return result;
-}
-
-static int int3400_thermal_run_osc(acpi_handle handle,
-				enum int3400_thermal_uuid uuid, bool enable)
-{
-	u32 ret, buf[2];
-	acpi_status status;
-	int result = 0;
-	struct acpi_osc_context context = {
-		.uuid_str = int3400_thermal_uuids[uuid],
-		.rev = 1,
-		.cap.length = 8,
-	};
-
-	buf[OSC_QUERY_DWORD] = 0;
-	buf[OSC_SUPPORT_DWORD] = enable;
-
-	context.cap.pointer = buf;
-
-	status = acpi_run_osc(handle, &context);
-	if (ACPI_SUCCESS(status)) {
-		ret = *((u32 *)(context.ret.pointer + 4));
-		if (ret != enable)
-			result = -EPERM;
-	} else
-		result = -EPERM;
-
-	kfree(context.ret.pointer);
 	return result;
 }
 
