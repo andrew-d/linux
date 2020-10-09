@@ -1166,6 +1166,44 @@ static void __init set_percpu_data_ready(void)
 	__printk_percpu_data_ready = true;
 }
 
+#define PERSIST_SEARCH_START 0
+#ifdef CONFIG_NO_BOOTMEM
+#define PERSIST_SEARCH_END 0x5e000000
+#else
+#define PERSIST_SEARCH_END 0xfe000000
+#endif
+#define PERSIST_SEARCH_JUMP (16*1024*1024)
+#define PERSIST_MAGIC 0xba5eba11
+
+/*
+ * arm uses one memory model, mips uses another
+ */
+static __init phys_addr_t physmem_reserve(phys_addr_t size) {
+#ifdef CONFIG_NO_BOOTMEM
+	phys_addr_t alloc;
+	alloc = memblock_find_in_range_node(size, SMP_CACHE_BYTES,
+			PERSIST_SEARCH_START, PERSIST_SEARCH_END,
+			NUMA_NO_NODE);
+	if (!alloc) return alloc;
+	if (memblock_reserve(alloc, size)) {
+		pr_err("printk_persist: memblock_reserve failed\n");
+		return 0;
+	}
+	return alloc;
+#else
+	unsigned long where;
+	for (where = PERSIST_SEARCH_END - size;
+	     where >= PERSIST_SEARCH_START && where <= PERSIST_SEARCH_END - size;
+	     where -= PERSIST_SEARCH_JUMP) {
+		if (reserve_bootmem(where, size, BOOTMEM_EXCLUSIVE))
+			continue;
+		else
+			return where;
+	}
+	return 0;
+#endif
+}
+
 void __init setup_log_buf(int early)
 {
 	unsigned long flags;
